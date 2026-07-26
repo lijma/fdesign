@@ -121,6 +121,17 @@ AI-generated code is notoriously hard to hand off because it relies on hallucina
 - **Code-Level Output**: Automatically compile design concepts into developer-friendly `tokens.css` and `components.js`.
 - **Multi-Version Snapshots**: Save named iterations (v1, v2) and easily compare or roll back versions in the local preview.
 
+### Platform-aware prototype setup
+
+On the first design interaction without an fdesign project, the installed Agent asks for the target platform before generating artifacts:
+
+- **Web** — whether responsive behavior is required and which widths to review.
+- **Mobile** — iOS, Android, both, or another device target; then a design direction: `neutral-brand`, `platform-native`, or a named custom system.
+
+`platform-native` resolves a single iOS target to Apple-native/SwiftUI conventions and a single Android target to Google Material 3. For a shared iOS-and-Android prototype, `neutral-brand` derives a consistent UI from the product's design tokens; native output uses separate variants rather than mixing both platforms in one screen. Mobile pages remain ordinary responsive HTML, while fdesign preview supplies the phone/tablet/desktop device frame.
+
+The platform design guidance follows [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) and [Material 3](https://developer.android.com/develop/ui/compose/designsystems/material3).
+
 ### Highlights: The Quality Mechanisms
 
 To keep the AI in check, fdesign enforces a structured workflow combining manual confirmation with two automated quality gates.

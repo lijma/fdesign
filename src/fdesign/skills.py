@@ -49,6 +49,16 @@ Everything is iterative — tokens, sitemap, components, and pages all grow toge
 **Tokens are NOT one-time setup. They grow as you discover new design needs.**
 **Sitemap, components, and pages accumulate — never forced upfront, never "finished".**
 
+## First-run platform context
+
+Before doing design/prototype work in a workspace, run `fdesign project list`.
+- If a project already exists, read its `prd.md` design context. Ask only when the platform context is missing or the user asks to change it.
+- If no fdesign project exists, ask the user for the primary target: **Web**, **Mobile**, or another named device category. Do not create design artifacts or journey HTML before the answer.
+- For **Web**, ask whether responsive behavior is required. Record `target_platform: web` and `responsive_web: true|false` in the PRD.
+- For **Mobile**, first ask for the target(s): iOS, Android, both, or another named device. Then ask for the design direction: **neutral-brand**, **platform-native**, or a **custom** named system/reference. Record `target_platform`, `mobile_targets`, `design_direction`, and `design_system` in the PRD.
+
+Platform-native maps a sole iOS target to `ios-native` (SwiftUI/Apple HIG) and a sole Android target to `material3`. For iOS + Android, recommend `neutral-brand`; if the user requires platform-native, make separately identified iOS-native and Material 3 variants — never a blended screen. A custom direction requires a design-system name or a reference before building.
+
 ## Key Rules
 
 - All colors/spacing/fonts use CSS custom properties mapped from `.fdesign/tokens/*.tokens.json`
@@ -69,8 +79,8 @@ Everything is iterative — tokens, sitemap, components, and pages all grow toge
 """
 
 SKILLS = {
-    "prototype": {
-        "name": "fdesign-prototype",
+    "fdesign": {
+        "name": "fdesign",
         "description": (
             "Complete iterative workflow for building HTML prototypes with fdesign. "
             "Covers the full loop: Token → Sitemap → Components → Build → Confirm → Deliver. "
@@ -116,7 +126,7 @@ Deliver → run fdesign preview → fdesign version create
 ## Step A — Sketch (理解当前想法)
 
 At the start of each iteration, understand what to build:
-- **First time**: "What is this product? Who uses it? What's the core flow?"
+- **First time**: Run `fdesign project list`. If no project exists, ask: "What is this product? Who uses it? What's the core flow? Is the target Web, Mobile, or another device?" For Web, ask whether it needs responsive behavior. For Mobile, ask target(s), then neutral-brand, platform-native, or custom direction.
 - **Returning**: "Which page or flow should we tackle next? Or refine an existing one?"
 - **Stuck**: "What's the one thing a user needs to DO in this product?" → start there
 
@@ -138,6 +148,11 @@ core_flows:
   - main flow
 css_framework: tailwind
 status: draft   # draft | confirmed
+# Optional design context:
+target_platform: mobile
+mobile_targets: [ios]
+design_direction: platform-native
+design_system: ios-native
 ---
 ```
 
@@ -150,9 +165,10 @@ status: draft   # draft | confirmed
 
 ### First iteration — establish baseline:
 1. Ask user: brand guidelines? reference URL? or describe the vibe?
-2. Run `fdesign token init` to generate W3C DTCG template files
-3. Fill in `global.tokens.json` with primitive values, `semantic.tokens.json` with aliases
-4. Validate and preview:
+2. Map branding to the selected design direction: `neutral-brand` derives a coherent component set from product tokens; `ios-native` uses tint/semantic colors, system-first type, SF Symbols, and app-icon variants; `material3` maps brand values to M3 color roles, typography, and shapes (optional dynamic color must have a static brand fallback).
+3. Run `fdesign token init` to generate W3C DTCG template files
+4. Fill in `global.tokens.json` with primitive values, `semantic.tokens.json` with aliases
+5. Validate and preview:
    ```bash
    fdesign token validate
    fdesign token view
@@ -391,6 +407,15 @@ Generate one page per iteration as a standalone `.html` file.
    - `components.js` — registers all component implementations; page HTML uses the component classes/elements defined here
 6. Every UI element in the page MUST use a component from `components.yaml` — if a component is missing after the check above, something was skipped; go back to Step D immediately
 
+### Mobile design checklist
+
+For Mobile, every page is a phone-oriented screen: use the viewport meta tag, touch-first controls, safe-area-aware fixed edges, scrolling that preserves primary actions, and a clear back/dismiss path. Model hierarchy as a page stack. Use tabs only for top-level destinations.
+
+- `ios-native`: use iOS navigation stacks, tab bars for top-level sections, and sheets/action sheets or full-screen presentation for scoped tasks; do not stack modals.
+- `material3`: use Material 3 navigation/back behavior and dialogs or bottom sheets for focused choices.
+- `neutral-brand`: use brand-derived tokens and one documented neutral interaction pattern per flow; do not mix recognizably iOS and Android patterns.
+- `custom`: apply only the named/reference design system after mapping its tokens and components.
+
 ### Coding rules:
 
 > ❌ **NEVER — These are hard blockers, not style suggestions:**
@@ -479,7 +504,7 @@ Four checks are run:
 ## Step F — Confirm & Continue
 
 1. Run `fdesign preview` — user opens browser to see the result
-2. Ask: "Does this look right? What should we do next?"
+2. Before presenting responsive Web work, verify the agreed widths. Before presenting Mobile work, verify the chosen direction, page stack/back paths, overlays, and the phone preview frame. Ask: "Does this look right? What should we do next?"
 3. Route based on answer:
    - **Refine this page** → back to Step E
    - **Tokens need adjustment** → back to Step B

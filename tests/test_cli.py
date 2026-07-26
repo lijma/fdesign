@@ -11,6 +11,8 @@ import pytest
 from click.testing import CliRunner
 
 from fdesign import __version__
+import fdesign
+from importlib.metadata import PackageNotFoundError
 from fdesign.cli import main
 from fdesign.project import create_project, init_workspace
 
@@ -38,6 +40,28 @@ class TestMainGroup:
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
         assert __version__ in result.output
+
+    def test_get_version_falls_back_to_git_tag(self, monkeypatch):
+        def missing_distribution(_: str) -> str:
+            raise PackageNotFoundError
+
+        class GitResult:
+            stdout = "v1.2.3-4-gabcdef-dirty\n"
+
+        monkeypatch.setattr(fdesign, "distribution_version", missing_distribution)
+        monkeypatch.setattr(fdesign.subprocess, "run", lambda *args, **kwargs: GitResult())
+        assert fdesign.get_version() == "v1.2.3-4-gabcdef-dirty"
+
+    def test_get_version_reports_unavailable_without_build_or_git(self, monkeypatch):
+        def missing_distribution(_: str) -> str:
+            raise PackageNotFoundError
+
+        def missing_git(*args, **kwargs):
+            raise FileNotFoundError
+
+        monkeypatch.setattr(fdesign, "distribution_version", missing_distribution)
+        monkeypatch.setattr(fdesign.subprocess, "run", missing_git)
+        assert fdesign.get_version() == "unavailable"
 
     def test_help(self, runner):
         result = runner.invoke(main, ["--help"])

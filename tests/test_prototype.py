@@ -95,6 +95,8 @@ class TestPrdInit:
         assert "product:" in content
         assert "target_users:" in content
         assert "status: draft" in content
+        assert "target_platform" in content
+        assert "design_direction" in content
 
     def test_returns_path(self, tmp_path):
         project = make_project(tmp_path)
@@ -147,6 +149,43 @@ class TestPrdValidate:
         errors, warnings = prd_validate(project)
         assert errors == []
         assert warnings == []
+
+    @pytest.mark.parametrize(
+        "context",
+        [
+            "target_platform: web\nresponsive_web: true",
+            "target_platform: mobile\nmobile_targets: [ios, android]\ndesign_direction: neutral-brand\ndesign_system: neutral-brand",
+            "target_platform: mobile\nmobile_targets: [ios]\ndesign_direction: platform-native\ndesign_system: ios-native",
+            "target_platform: mobile\nmobile_targets: [android]\ndesign_direction: platform-native\ndesign_system: material3",
+            "target_platform: mobile\nmobile_targets: [ios]\ndesign_direction: custom\ndesign_system: fluent-ui",
+        ],
+    )
+    def test_valid_optional_design_context(self, tmp_path, context):
+        project = make_project(tmp_path)
+        write_prd(project, _VALID_PRD.replace("---\nbody", f"{context}\n---\nbody"))
+        errors, _ = prd_validate(project)
+        assert errors == []
+
+    def test_invalid_optional_design_context(self, tmp_path):
+        project = make_project(tmp_path)
+        content = _VALID_PRD.replace(
+            "---\nbody", "target_platform: [mobile]\nmobile_targets: []\ndesign_direction: mixed\ndesign_system: ''\n---\nbody"
+        )
+        write_prd(project, content)
+        errors, _ = prd_validate(project)
+        assert any("target_platform" in error for error in errors)
+        assert any("mobile_targets" in error for error in errors)
+        assert any("design_direction" in error for error in errors)
+        assert any("design_system" in error for error in errors)
+
+    def test_responsive_web_must_be_boolean(self, tmp_path):
+        project = make_project(tmp_path)
+        content = _VALID_PRD.replace(
+            "---\nbody", "target_platform: web\nresponsive_web: 'yes'\n---\nbody"
+        )
+        write_prd(project, content)
+        errors, _ = prd_validate(project)
+        assert "field 'responsive_web' must be a boolean" in errors
 
     def test_missing_file(self, tmp_path):
         project = make_project(tmp_path)

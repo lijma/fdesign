@@ -28,6 +28,12 @@ target_users: []
 core_flows: []
 css_framework: tailwind
 status: draft
+# Optional design context — capture before creating prototype artifacts:
+# target_platform: web | mobile | <named device category>
+# responsive_web: true | false              # Web only
+# mobile_targets: [ios, android]            # Mobile only
+# design_direction: neutral-brand | platform-native | custom
+# design_system: neutral-brand | ios-native | material3 | <named system>
 ---
 
 ## 产品背景
@@ -91,6 +97,7 @@ components: []
 # ---------------------------------------------------------------------------
 
 _VALID_PRD_STATUSES = frozenset({"draft", "confirmed"})
+_VALID_DESIGN_DIRECTIONS = frozenset({"neutral-brand", "platform-native", "custom"})
 _VALID_PAGE_STATUSES = frozenset({"planned", "building", "built"})
 _VALID_COMPONENT_STATUSES = frozenset({"draft", "built"})
 
@@ -189,6 +196,30 @@ def prd_validate(project_dir: Path) -> tuple[list[str], list[str]]:
             f"invalid status '{fm['status']}' — must be one of: "
             + ", ".join(sorted(_VALID_PRD_STATUSES))
         )
+
+    # Optional design context. Legacy PRDs remain valid when these fields are absent.
+    if "target_platform" in fm and (
+        not isinstance(fm["target_platform"], str) or not fm["target_platform"]
+    ):
+        errors.append("field 'target_platform' must be a non-empty string")
+    if "responsive_web" in fm and not isinstance(fm["responsive_web"], bool):
+        errors.append("field 'responsive_web' must be a boolean")
+    if "mobile_targets" in fm:
+        targets = fm["mobile_targets"]
+        if not isinstance(targets, list) or not targets or not all(
+            isinstance(target, str) and target for target in targets
+        ):
+            errors.append("field 'mobile_targets' must be a non-empty list of strings")
+    if "design_direction" in fm and fm["design_direction"] not in _VALID_DESIGN_DIRECTIONS:
+        errors.append(
+            "invalid design_direction "
+            f"'{fm['design_direction']}' — must be one of: "
+            + ", ".join(sorted(_VALID_DESIGN_DIRECTIONS))
+        )
+    if "design_system" in fm and (
+        not isinstance(fm["design_system"], str) or not fm["design_system"]
+    ):
+        errors.append("field 'design_system' must be a non-empty string")
 
     # Warnings
     if fm.get("status") == "draft":
