@@ -298,6 +298,23 @@ class TestRenderPreviewIndex:
         html = render_preview_index(tmp_path)
         assert '<base href="/build/">' in html
 
+    def test_locale_selector_is_absent_without_catalogs(self, tmp_path):
+        html = render_preview_index(tmp_path)
+        assert 'id="locale-select"' not in html
+        assert "var _locales = {};" in html
+
+    def test_locale_selector_and_runtime_are_rendered_for_catalogs(self, tmp_path):
+        locale_dir = tmp_path / "locale"
+        locale_dir.mkdir()
+        (locale_dir / "en.json").write_text('{"title":"Hello"}', encoding="utf-8")
+        (locale_dir / "fr_FR.json").write_text('{"title":"Bonjour"}', encoding="utf-8")
+        html = render_preview_index(tmp_path)
+        assert 'id="locale-select"' in html
+        assert '<option value="en">en</option>' in html
+        assert '"fr_FR": "locale/fr_FR.json"' in html
+        assert "function _applyLocale(frame)" in html
+        assert "data-i18n-attr" in html
+
     def test_welcome_state_when_no_files(self, tmp_path):
         html = render_preview_index(tmp_path)
         assert "Nothing here yet" in html

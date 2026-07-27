@@ -15,6 +15,12 @@ from fdesign.prototype import (
     component_init,
     component_validate,
     journey_check,
+    locale_add,
+    locale_init,
+    locale_list,
+    locale_remove,
+    locale_validate,
+    load_locale_catalogs,
     prd_init,
     prd_validate,
     prototype_init,
@@ -186,6 +192,16 @@ class TestPrdValidate:
         write_prd(project, content)
         errors, _ = prd_validate(project)
         assert "field 'responsive_web' must be a boolean" in errors
+
+    def test_localization_context_fields_validate(self, tmp_path):
+        project = make_project(tmp_path)
+        content = _VALID_PRD.replace(
+            "---\nbody", "source_locale: ''\nsupported_locales: [en, 1]\n---\nbody"
+        )
+        write_prd(project, content)
+        errors, _ = prd_validate(project)
+        assert any("source_locale" in error for error in errors)
+        assert any("supported_locales" in error for error in errors)
 
     def test_missing_file(self, tmp_path):
         project = make_project(tmp_path)
@@ -1057,6 +1073,121 @@ class TestPrototypeValidate:
         # auth domain IS in sitemap → no domain error
         assert not any("auth" in e and "not found" in e for e in errors)
 
+    def test_localization_catalogs_validate(self, tmp_path):
+        project = make_project(tmp_path)
+        write_journey_map(project, "domain,page_id,title,html_file\n")
+        write_sitemap(project, "---\nversion: 1\nupdated_at: 2024-01-01\npages: []\n---\n")
+        locale_dir = project / "build" / "locale"
+        locale_dir.mkdir(parents=True)
+        (locale_dir / "en.json").write_text('{"welcome.title":"Hello {0}"}', encoding="utf-8")
+        (locale_dir / "fr_FR.json").write_text('{"welcome.title":"Bonjour {0}"}', encoding="utf-8")
+        errors, _ = prototype_validate(project)
+        assert errors == []
+
+    def test_localization_catalog_reports_key_and_placeholder_drift(self, tmp_path):
+        project = make_project(tmp_path)
+        write_journey_map(project, "domain,page_id,title,html_file\n")
+        write_sitemap(project, "---\nversion: 1\nupdated_at: 2024-01-01\npages: []\n---\n")
+        locale_dir = project / "build" / "locale"
+        locale_dir.mkdir(parents=True)
+        (locale_dir / "en.json").write_text('{"a":"{0}","b":"B"}', encoding="utf-8")
+        (locale_dir / "fr.json").write_text('{"a":"sans","c":"C"}', encoding="utf-8")
+        errors, _ = prototype_validate(project)
+        assert any("missing keys: b" in error for error in errors)
+        assert any("extra keys: c" in error for error in errors)
+        assert any("placeholder mismatch" in error for error in errors)
+
+    def test_missing_journey_map_still_reports_locale_errors(self, tmp_path):
+        project = make_project(tmp_path)
+        locale_dir = project / "build" / "locale"
+        locale_dir.mkdir(parents=True)
+        (locale_dir / "en.json").write_text('{"a":"A"}', encoding="utf-8")
+        (locale_dir / "fr.json").write_text('{"b":"B"}', encoding="utf-8")
+        errors, _ = prototype_validate(project)
+        assert any("journey-map.csv not found" in error for error in errors)
+        assert any("locale 'fr' missing keys: a" in error for error in errors)
+
+
+class TestLocaleCatalogs:
+    def test_absent_locale_directory_is_optional(self, tmp_path):
+        assert load_locale_catalogs(tmp_path) == ({}, [])
+
+    def test_loads_flat_catalogs_and_reports_invalid_files(self, tmp_path):
+        locale_dir = tmp_path / "locale"
+        locale_dir.mkdir()
+        (locale_dir / "en.json").write_text('{"key":"Value"}', encoding="utf-8")
+        (locale_dir / "bad!.json").write_text('{"key":"Value"}', encoding="utf-8")
+        (locale_dir / "fr.json").write_text('{"key": ["Value"]}', encoding="utf-8")
+        (locale_dir / "de.json").write_text("not json", encoding="utf-8")
+        catalogs, errors = load_locale_catalogs(tmp_path)
+        assert catalogs == {"en": {"key": "Value"}}
+        assert any("invalid locale filename" in error for error in errors)
+        assert any("flat string map" in error for error in errors)
+        assert any("invalid locale JSON" in error for error in errors)
+
+    def test_reports_non_directory_and_no_valid_catalogs(self, tmp_path):
+        (tmp_path / "locale").write_text("not a directory", encoding="utf-8")
+        catalogs, errors = load_locale_catalogs(tmp_path)
+        assert catalogs == {}
+        assert errors == ["build/locale must be a directory"]
+
+        locale_dir = tmp_path / "another" / "locale"
+        locale_dir.mkdir(parents=True)
+        (locale_dir / "nested").mkdir()
+        (locale_dir / "readme.txt").write_text("ignored", encoding="utf-8")
+        (locale_dir / "bad!.json").write_text("{}", encoding="utf-8")
+        catalogs, errors = load_locale_catalogs(locale_dir.parent)
+        assert catalogs == {}
+        assert "build/locale contains no valid JSON catalogs" in errors
+
+    def test_lifecycle_initializes_adds_lists_removes_and_validates(self, tmp_path):
+        project = make_project(tmp_path)
+        source = locale_init(project, "zh_CN")
+        assert source.read_text(encoding="utf-8") == "{}\n"
+        source.write_text('{"welcome":"你好 {0}"}\n', encoding="utf-8")
+        write_prd(project, "---\nsource_locale: zh_CN\n---\n")
+        translated = locale_add(project, "fr_FR")
+        assert translated.read_text(encoding="utf-8") == '{\n  "welcome": "你好 {0}"\n}\n'
+        assert locale_list(project) == (["fr_FR", "zh_CN"], [])
+        assert locale_validate(project) == []
+        locale_remove(project, "fr_FR")
+        assert not translated.exists()
+
+    def test_lifecycle_rejects_invalid_or_unsafe_operations(self, tmp_path):
+        project = make_project(tmp_path)
+        with pytest.raises(ValueError, match="invalid locale identifier"):
+            locale_init(project, "bad!")
+        locale_init(project, "en")
+        with pytest.raises(FileExistsError):
+            locale_init(project, "fr")
+        with pytest.raises(FileNotFoundError):
+            locale_add(make_project(tmp_path / "other"), "fr")
+        with pytest.raises(FileExistsError):
+            locale_add(project, "en")
+        with pytest.raises(ValueError, match="cannot remove source"):
+            locale_remove(project, "en")
+        with pytest.raises(FileNotFoundError):
+            locale_remove(project, "fr")
+
+    def test_lifecycle_rejects_malformed_catalogs(self, tmp_path):
+        project = make_project(tmp_path)
+        locale_dir = project / "build" / "locale"
+        locale_dir.mkdir(parents=True)
+        (locale_dir / "en.json").write_text("not json", encoding="utf-8")
+        with pytest.raises(ValueError, match="invalid locale JSON"):
+            locale_add(project, "fr")
+        with pytest.raises(ValueError, match="invalid locale JSON"):
+            locale_remove(project, "en")
+
+    def test_locale_source_falls_back_when_prd_is_invalid(self, tmp_path):
+        project = make_project(tmp_path)
+        locale_dir = project / "build" / "locale"
+        locale_dir.mkdir(parents=True)
+        (locale_dir / "de.json").write_text('{"a":"A"}', encoding="utf-8")
+        (locale_dir / "fr.json").write_text('{"a":"A"}', encoding="utf-8")
+        (project / "prd.md").write_text("---\n: bad: yaml:\n---\n", encoding="utf-8")
+        assert locale_validate(project) == []
+
 
 # ---------------------------------------------------------------------------
 # CLI — fdesign prototype
@@ -1112,6 +1243,44 @@ class TestCliPrototype:
         runner = CliRunner()
         result = runner.invoke(main, ["prototype", "validate", "--project-dir", str(tmp_path)])
         assert result.exit_code == 1
+
+
+class TestCliLocale:
+    def test_list_reports_empty_catalogs(self, tmp_path):
+        make_project(tmp_path)
+        result = CliRunner().invoke(
+            main, ["locale", "list", "--project-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        assert "No locale catalogs found" in result.output
+
+    def test_lifecycle_commands(self, tmp_path):
+        make_project(tmp_path)
+        runner = CliRunner()
+        init = runner.invoke(main, ["locale", "init", "--source", "en", "--project-dir", str(tmp_path)])
+        assert init.exit_code == 0
+        add = runner.invoke(main, ["locale", "add", "fr", "--project-dir", str(tmp_path)])
+        assert add.exit_code == 0
+        listing = runner.invoke(main, ["locale", "list", "--project-dir", str(tmp_path)])
+        assert listing.exit_code == 0
+        assert "en" in listing.output and "fr" in listing.output
+        valid = runner.invoke(main, ["locale", "validate", "--project-dir", str(tmp_path)])
+        assert valid.exit_code == 0
+        remove = runner.invoke(main, ["locale", "remove", "fr", "--project-dir", str(tmp_path)])
+        assert remove.exit_code == 0
+
+    def test_commands_report_errors(self, tmp_path):
+        make_project(tmp_path)
+        runner = CliRunner()
+        assert runner.invoke(main, ["locale", "add", "fr", "--project-dir", str(tmp_path)]).exit_code == 1
+        assert runner.invoke(main, ["locale", "init", "--source", "bad!", "--project-dir", str(tmp_path)]).exit_code == 1
+        assert runner.invoke(main, ["locale", "init", "--source", "en", "--project-dir", str(tmp_path)]).exit_code == 0
+        assert runner.invoke(main, ["locale", "init", "--source", "fr", "--project-dir", str(tmp_path)]).exit_code == 1
+        assert runner.invoke(main, ["locale", "remove", "en", "--project-dir", str(tmp_path)]).exit_code == 1
+        project = tmp_path / ".fdesign" / "projects" / "default"
+        (project / "build" / "locale" / "en.json").write_text("not json", encoding="utf-8")
+        assert runner.invoke(main, ["locale", "list", "--project-dir", str(tmp_path)]).exit_code == 1
+        assert runner.invoke(main, ["locale", "validate", "--project-dir", str(tmp_path)]).exit_code == 1
 
 
 # ---------------------------------------------------------------------------

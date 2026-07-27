@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fdesign.prototype import load_locale_catalogs
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -168,6 +170,12 @@ body { display: flex; height: 100vh; background: #f4f4f5; }
   max-width: 180px; outline: none;
 }
 .page-select:focus { border-color: #6366f1; }
+.locale-select {
+  font-size: 12px; background: #fff; border: 1px solid #e4e4e7;
+  border-radius: 6px; color: #18181b; padding: 4px 6px; cursor: pointer;
+  max-width: 120px; outline: none;
+}
+.locale-select:focus { border-color: #6366f1; }
 .fullscreen-btn {
   display: flex; align-items: center; justify-content: center;
   background: none; border: 1px solid #e4e4e7; border-radius: 6px;
@@ -330,6 +338,7 @@ body.is-fullscreen .sidebar { display: none; }
       </div>
       <span class="toolbar-sep">/</span>
       <select id="page-select" class="page-select" aria-label="Page"></select>
+<!-- LOCALE_SELECT -->
       <button id="fullscreen-btn" class="fullscreen-btn" title="Fullscreen"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5V2h3M9 2h3v3M12 9v3H9M5 12H2V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
   </div>
@@ -341,10 +350,12 @@ body.is-fullscreen .sidebar { display: none; }
 // DOMAINS_DATA
 // VERSIONS_DATA
 // CHANGEHISTORY_DATA
+// LOCALES_DATA
 var _first = null;
 // FIRST_ITEM
 var _currentDevice = 'web';
 var _currentDomain = null;
+var _currentLocale = null;
 // ACTIVE_VERSION
 var _fsEnterSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 5V2h3M9 2h3v3M12 9v3H9M5 12H2V9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 var _fsExitSvg = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 2v3H2M9 2v3h3M9 12v-3h3M5 12v-3H2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -386,7 +397,53 @@ function _mkFrame(src) {
   f.style.border = 'none';
   f.style.display = 'block';
   f.style.background = '#fff';
+  f.addEventListener('load', function() { _applyLocale(f); });
   return f;
+}
+
+function _defaultLocale() {
+  var browser = (navigator.language || '').replace('-', '_');
+  var short = browser.split('_')[0];
+  if (_locales[browser]) return browser;
+  if (_locales[short]) return short;
+  if (_locales.en) return 'en';
+  var names = Object.keys(_locales).sort();
+  return names.length ? names[0] : null;
+}
+
+function _applyLocale(frame) {
+  if (!_currentLocale || !_locales[_currentLocale] || !frame.contentDocument) return;
+  fetch(_versionUrl(_locales[_currentLocale])).then(function(response) {
+    if (!response.ok) throw new Error('locale unavailable');
+    return response.json();
+  }).then(function(catalog) {
+    frame.contentDocument.querySelectorAll('[data-i18n]').forEach(function(el) {
+      var key = el.dataset.i18n;
+      if (!Object.prototype.hasOwnProperty.call(el.dataset, 'i18nSource')) el.dataset.i18nSource = el.textContent;
+      el.textContent = Object.prototype.hasOwnProperty.call(catalog, key) ? catalog[key] : el.dataset.i18nSource;
+    });
+    frame.contentDocument.querySelectorAll('[data-i18n-attr]').forEach(function(el) {
+      el.dataset.i18nAttr.split(';').forEach(function(mapping) {
+        var pair = mapping.split(':');
+        var attr = pair[0]; var key = pair.slice(1).join(':');
+        if (!attr || !key) return;
+        var sourceKey = 'i18nSource' + attr.charAt(0).toUpperCase() + attr.slice(1);
+        if (!Object.prototype.hasOwnProperty.call(el.dataset, sourceKey)) el.dataset[sourceKey] = el.getAttribute(attr) || '';
+        el.setAttribute(attr, Object.prototype.hasOwnProperty.call(catalog, key) ? catalog[key] : el.dataset[sourceKey]);
+      });
+    });
+  }).catch(function() {});
+}
+
+var _localeSelect = document.getElementById('locale-select');
+if (_localeSelect) {
+  _currentLocale = _defaultLocale();
+  _localeSelect.value = _currentLocale || '';
+  _localeSelect.addEventListener('change', function() {
+    _currentLocale = this.value;
+    var frame = document.getElementById('preview-frame');
+    if (frame) _applyLocale(frame);
+  });
 }
 
 function _renderDevice(wrap, size, src) {
@@ -625,6 +682,7 @@ def render_preview_index(build_dir: Path, active_version: str = "trunk") -> str:
     floop_dir = build_dir.parent
     versions = _load_versions(floop_dir)
     changehistory = _load_changehistory(build_dir)
+    locales, _locale_errors = load_locale_catalogs(build_dir)
 
     version_options_html = _build_version_options_html(versions, active_version)
     version_nav_html, first_from_versions = _build_version_nav_html(changehistory)
@@ -644,6 +702,9 @@ def render_preview_index(build_dir: Path, active_version: str = "trunk") -> str:
         f"var _changeHistory = {json.dumps(changehistory, ensure_ascii=False)};"
     )
     active_version_script = f"var _activeVersion = {json.dumps(active_version)};"
+    locale_urls = {locale: f"locale/{locale}.json" for locale in locales}
+    locales_script = f"var _locales = {json.dumps(locale_urls, ensure_ascii=False)};"
+    locale_select_html = _build_locale_select_html(locales)
 
     frame_area = (
         ""
@@ -665,14 +726,27 @@ def render_preview_index(build_dir: Path, active_version: str = "trunk") -> str:
         .replace("<!-- SITEMAP_NAV -->", sitemap_nav_html)
         .replace("<!-- SIDEBAR_NAV -->", nav_html)
         .replace("<!-- FRAME_AREA -->", frame_area)
+        .replace("<!-- LOCALE_SELECT -->", locale_select_html)
         .replace("// FIRST_ITEM", first_script)
         .replace("// DOMAINS_DATA", domains_script)
         .replace("// VERSIONS_DATA", versions_script)
         .replace("// CHANGEHISTORY_DATA", changehistory_script)
         .replace("// ACTIVE_VERSION", active_version_script)
+        .replace("// LOCALES_DATA", locales_script)
     )
 
     return content
+
+
+def _build_locale_select_html(catalogs: dict[str, dict[str, str]]) -> str:
+    """Return the optional toolbar selector for valid locale catalogs."""
+    if not catalogs:
+        return ""
+    options = "".join(
+        f'<option value="{html_mod.escape(locale)}">{html_mod.escape(locale)}</option>'
+        for locale in sorted(catalogs)
+    )
+    return f'<select id="locale-select" class="locale-select" aria-label="Language">{options}</select>'
 
 
 def create_preview_request_handler(

@@ -132,6 +132,29 @@ On the first design interaction without an fdesign project, the installed Agent 
 
 The platform design guidance follows [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) and [Material 3](https://developer.android.com/develop/ui/compose/designsystems/material3).
 
+### Prototype localization
+
+Before a localized prototype is created, fdesign asks for a source language and the supported language set. Initialize and manage catalogs through the CLI rather than by manually creating files:
+
+```bash
+fdesign locale init --source en
+fdesign locale add fr_FR
+fdesign locale list
+fdesign locale validate
+fdesign locale remove fr_FR
+```
+
+Catalogs live in `.fdesign/projects/<project>/build/locale/` as one flat Lokalise-compatible JSON map per language:
+
+```json
+{
+  "checkout.submit": "Place order",
+  "checkout.items": "{0} items"
+}
+```
+
+Journey HTML keeps source copy as a fallback and marks localized text with `data-i18n` (or attributes with `data-i18n-attr`). When `build/locale/` contains valid catalogs, fdesign preview adds a language selector and updates the active prototype. Ask the Agent to add or remove a language at any iteration; it uses the locale CLI, maintains key and placeholder parity, and validates the catalogs before delivery. `fdesign prototype validate` also runs locale validation whenever locale catalogs exist.
+
 ### Highlights: The Quality Mechanisms
 
 To keep the AI in check, fdesign enforces a structured workflow combining manual confirmation with two automated quality gates.

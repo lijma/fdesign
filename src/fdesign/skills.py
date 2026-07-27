@@ -26,7 +26,8 @@ When doing any design or prototype work, follow the fdesign workflow.
 - `fdesign prd init` / `fdesign prd validate` — Create and validate `.fdesign/prd.md` (PRD)
 - `fdesign sitemap init` / `fdesign sitemap validate` — Create and validate `.fdesign/sitemap.md`
 - `fdesign prototype init` — Generate `.fdesign/journey-map.csv` (sitemap domain → HTML mapping) from sitemap.md
-- `fdesign prototype validate` — Validate: every journey HTML is mapped in CSV; every CSV domain exists in sitemap
+- `fdesign prototype validate` — Validate journey mapping and locale catalogs in `build/locale/`
+- `fdesign locale init/add/remove/list/validate` — Initialize, manage, list, and validate locale catalogs
 - `fdesign journey check <file>` — Backward-check a journey HTML for missing tokens, unused components, raw tag misuse, and missing head links
 - `fdesign component init` / `fdesign component validate` — Manage `.fdesign/components.yaml`
 - `fdesign version create <name>` / `fdesign version list` — Snapshot and list prototype versions
@@ -53,11 +54,19 @@ Everything is iterative — tokens, sitemap, components, and pages all grow toge
 
 Before doing design/prototype work in a workspace, run `fdesign project list`.
 - If a project already exists, read its `prd.md` design context. Ask only when the platform context is missing or the user asks to change it.
-- If no fdesign project exists, ask the user for the primary target: **Web**, **Mobile**, or another named device category. Do not create design artifacts or journey HTML before the answer.
+- If no fdesign project exists, first confirm the primary target: **Web**, **Mobile**, or another named device category, then gather the minimum product context (who uses it and the core flow). Do not initialize the workspace/project or create a PRD before these answers.
 - For **Web**, ask whether responsive behavior is required. Record `target_platform: web` and `responsive_web: true|false` in the PRD.
 - For **Mobile**, first ask for the target(s): iOS, Android, both, or another named device. Then ask for the design direction: **neutral-brand**, **platform-native**, or a **custom** named system/reference. Record `target_platform`, `mobile_targets`, `design_direction`, and `design_system` in the PRD.
 
 Platform-native maps a sole iOS target to `ios-native` (SwiftUI/Apple HIG) and a sole Android target to `material3`. For iOS + Android, recommend `neutral-brand`; if the user requires platform-native, make separately identified iOS-native and Material 3 variants — never a blended screen. A custom direction requires a design-system name or a reference before building.
+
+## Localization context
+
+For a new project, after platform and core-product discovery but **before** `fdesign init`, project creation, or `fdesign prd init`, ask whether the product needs localization. If yes, ask for the source language and every supported language; record `source_locale` and `supported_locales` in the first PRD. If no, continue with project setup without a locale directory. For an existing project, ask only when its PRD lacks this context or the user asks to change the language set.
+
+Preview owns the default language switcher. Do **not** ask how switching should work, or add an in-product selector, language-specific routes, URL parameters, or auto-detection unless the user explicitly requests product-level language behavior. Initialize the source catalog with `fdesign locale init --source <locale>` and use `fdesign locale add <locale>` for each target language. Store one flat Lokalise-compatible JSON catalog per language in `build/locale/`, at `<locale>.json`, with stable dotted keys and string values.
+
+At any iteration, users can add or remove a language. To add one, run `fdesign locale add <locale>`, translate the scaffolded source keys from the PRD, sitemap, visible source copy, and business context, preserve `{0}` placeholders, then run `fdesign locale validate` and `fdesign prototype validate`. To remove one, run `fdesign locale remove <locale>` after confirming the remaining language set. Never create or delete locale files manually.
 
 ## Key Rules
 
@@ -126,7 +135,7 @@ Deliver → run fdesign preview → fdesign version create
 ## Step A — Sketch (理解当前想法)
 
 At the start of each iteration, understand what to build:
-- **First time**: Run `fdesign project list`. If no project exists, ask: "What is this product? Who uses it? What's the core flow? Is the target Web, Mobile, or another device?" For Web, ask whether it needs responsive behavior. For Mobile, ask target(s), then neutral-brand, platform-native, or custom direction.
+- **First time**: Run `fdesign project list`. If no project exists, first ask: "What is this product? Who uses it? What's the core flow? Is the target Web, Mobile, or another device?" For Web, ask whether it needs responsive behavior. For Mobile, ask target(s), then neutral-brand, platform-native, or custom direction. **Before running `fdesign init`, creating a project, or `fdesign prd init`, ask whether localization is needed.** If yes, collect the source and supported languages; do not ask for a switching method because preview supplies the default selector.
 - **Returning**: "Which page or flow should we tackle next? Or refine an existing one?"
 - **Stuck**: "What's the one thing a user needs to DO in this product?" → start there
 
@@ -153,6 +162,9 @@ target_platform: mobile
 mobile_targets: [ios]
 design_direction: platform-native
 design_system: ios-native
+# Optional localization context:
+source_locale: en
+supported_locales: [en, fr_FR]
 ---
 ```
 
@@ -407,6 +419,20 @@ Generate one page per iteration as a standalone `.html` file.
    - `components.js` — registers all component implementations; page HTML uses the component classes/elements defined here
 6. Every UI element in the page MUST use a component from `components.yaml` — if a component is missing after the check above, something was skipped; go back to Step D immediately
 
+### Localization markup
+
+When localization is enabled, source-language HTML remains the fallback and every localizable string gets a stable semantic key:
+
+```html
+<button data-i18n="checkout.submit">Place order</button>
+<input placeholder="Email address" data-i18n-attr="placeholder:checkout.email">
+```
+
+- Use `fdesign locale init --source <source_locale>` to create the source catalog in `build/locale/` and `fdesign locale add <locale>` to scaffold each supported locale; then write matching source values and ensure every supported locale has the exact same keys.
+- Keep placeholders such as `{0}` and required line breaks in every translation.
+- Never derive a key from translated text. If the business meaning is ambiguous, ask the user before translating.
+- Use `fdesign locale validate` before delivery. To remove a language, use `fdesign locale remove <locale>`; never edit or delete catalog files manually.
+
 ### Mobile design checklist
 
 For Mobile, every page is a phone-oriented screen: use the viewport meta tag, touch-first controls, safe-area-aware fixed edges, scrolling that preserves primary actions, and a clear back/dismiss path. Model hierarchy as a page stack. Use tabs only for top-level destinations.
@@ -504,7 +530,7 @@ Four checks are run:
 ## Step F — Confirm & Continue
 
 1. Run `fdesign preview` — user opens browser to see the result
-2. Before presenting responsive Web work, verify the agreed widths. Before presenting Mobile work, verify the chosen direction, page stack/back paths, overlays, and the phone preview frame. Ask: "Does this look right? What should we do next?"
+2. Before presenting responsive Web work, verify the agreed widths. Before presenting Mobile work, verify the chosen direction, page stack/back paths, overlays, and the phone preview frame. For localized work, switch each requested language in preview and check copy expansion, fallback text, and translated labels/attributes. Ask: "Does this look right? What should we do next?"
 3. Route based on answer:
    - **Refine this page** → back to Step E
    - **Tokens need adjustment** → back to Step B

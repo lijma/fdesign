@@ -27,6 +27,11 @@ def test_skill_registry_is_prototype_only():
     assert "material3" in INSTRUCTION
     assert "ios-native" in SKILLS["fdesign"]["content"]
     assert "Mobile design checklist" in SKILLS["fdesign"]["content"]
+    assert "Localization context" in INSTRUCTION
+    assert "build/locale/" in SKILLS["fdesign"]["content"]
+    assert "fdesign locale init" in INSTRUCTION
+    assert "before** `fdesign init`, project creation, or `fdesign prd init`" in INSTRUCTION
+    assert "Do **not** ask how switching should work" in INSTRUCTION
 
 
 def test_copilot_adapter(tmp_path):
@@ -39,6 +44,11 @@ def test_copilot_adapter(tmp_path):
     assert "responsive behavior" in instruction
     assert "platform-native" in skill
     assert "preview already wraps the iframe" in skill
+    assert "source language" in instruction
+    assert "data-i18n" in skill
+    assert "fdesign locale add" in instruction
+    assert "Before running `fdesign init`, creating a project, or `fdesign prd init`" in skill
+    assert "do not ask for a switching method" in skill
 
 
 def test_cursor_adapter(tmp_path):
@@ -84,8 +94,8 @@ def test_agents_md_adapters(tmp_path):
     OpenCodeAdapter().install(tmp_path)
     assert "# Existing" in agents.read_text(encoding="utf-8")
 
-    agents.write_text("# Existing\n<!-- fdesign:skills -->\nold", encoding="utf-8")
+    agents.write_text("# Existing\n<!-- fdesign:skills -->\nSTALE_SECTION", encoding="utf-8")
     OpenCodeAdapter().install(tmp_path)
     content = agents.read_text(encoding="utf-8")
-    assert "old" not in content
+    assert "STALE_SECTION" not in content
     assert ".opencode/skills/fdesign/SKILL.md" in content

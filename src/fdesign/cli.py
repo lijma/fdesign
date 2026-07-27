@@ -755,6 +755,121 @@ def prototype_validate_cmd(project_name: str | None, project_dir: Path):
 
 
 # ---------------------------------------------------------------------------
+# fdesign locale — Prototype localization catalog management
+# ---------------------------------------------------------------------------
+
+
+@main.group()
+def locale():
+    """Manage prototype localization catalogs.
+
+    \b
+    Commands:
+      fdesign locale init --source en  Initialize a source catalog
+      fdesign locale add fr_FR          Scaffold a translation catalog
+      fdesign locale remove fr_FR       Remove a translation catalog
+      fdesign locale list               List configured catalogs
+      fdesign locale validate           Validate catalog consistency
+    """
+
+
+def _locale_project(project_dir: Path, project_name: str | None) -> tuple[Path, Path]:
+    workspace = project_dir.resolve()
+    return workspace, _resolve_floop_project(workspace, project_name)
+
+
+@locale.command("init")
+@click.option("--source", "source_locale", required=True, help="Source locale identifier.")
+@click.option("--project", "project_name", default=None, help="fdesign project name.")
+@click.option("--project-dir", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
+def locale_init_cmd(source_locale: str, project_name: str | None, project_dir: Path):
+    """Initialize the source locale catalog."""
+    from fdesign.prototype import locale_init
+
+    workspace, floop_project = _locale_project(project_dir, project_name)
+    try:
+        path = locale_init(floop_project, source_locale)
+    except (FileExistsError, ValueError) as exc:
+        click.secho(f"⚠ {exc}", fg="yellow", err=True)
+        raise SystemExit(1) from exc
+    click.secho("✓ locale source catalog initialized", fg="green", bold=True)
+    click.echo(f"  {path.relative_to(workspace)}")
+
+
+@locale.command("add")
+@click.argument("locale_name")
+@click.option("--project", "project_name", default=None, help="fdesign project name.")
+@click.option("--project-dir", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
+def locale_add_cmd(locale_name: str, project_name: str | None, project_dir: Path):
+    """Scaffold a translation catalog from the source key inventory."""
+    from fdesign.prototype import locale_add
+
+    workspace, floop_project = _locale_project(project_dir, project_name)
+    try:
+        path = locale_add(floop_project, locale_name)
+    except (FileExistsError, FileNotFoundError, ValueError) as exc:
+        click.secho(f"⚠ {exc}", fg="yellow", err=True)
+        raise SystemExit(1) from exc
+    click.secho(f"✓ locale '{locale_name}' added", fg="green", bold=True)
+    click.echo(f"  {path.relative_to(workspace)}")
+
+
+@locale.command("remove")
+@click.argument("locale_name")
+@click.option("--project", "project_name", default=None, help="fdesign project name.")
+@click.option("--project-dir", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
+def locale_remove_cmd(locale_name: str, project_name: str | None, project_dir: Path):
+    """Remove a non-source translation catalog."""
+    from fdesign.prototype import locale_remove
+
+    workspace, floop_project = _locale_project(project_dir, project_name)
+    try:
+        path = locale_remove(floop_project, locale_name)
+    except (FileNotFoundError, ValueError) as exc:
+        click.secho(f"⚠ {exc}", fg="yellow", err=True)
+        raise SystemExit(1) from exc
+    click.secho(f"✓ locale '{locale_name}' removed", fg="green", bold=True)
+    click.echo(f"  {path.relative_to(workspace)}")
+
+
+@locale.command("list")
+@click.option("--project", "project_name", default=None, help="fdesign project name.")
+@click.option("--project-dir", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
+def locale_list_cmd(project_name: str | None, project_dir: Path):
+    """List available locale catalogs."""
+    from fdesign.prototype import locale_list
+
+    _, floop_project = _locale_project(project_dir, project_name)
+    catalogs, errors = locale_list(floop_project)
+    for error in errors:
+        click.secho(f"  ✗ {error}", fg="red")
+    if errors:
+        raise SystemExit(1)
+    if not catalogs:
+        click.echo("No locale catalogs found. Run 'fdesign locale init --source <locale>'.")
+        return
+    for locale_name in catalogs:
+        click.echo(f"  {locale_name}")
+
+
+@locale.command("validate")
+@click.option("--project", "project_name", default=None, help="fdesign project name.")
+@click.option("--project-dir", type=click.Path(exists=True, file_okay=False, path_type=Path), default=".")
+def locale_validate_cmd(project_name: str | None, project_dir: Path):
+    """Validate locale catalog format, keys, and placeholders."""
+    from fdesign.prototype import locale_validate
+
+    _, floop_project = _locale_project(project_dir, project_name)
+    errors = locale_validate(floop_project)
+    for error in errors:
+        click.secho(f"  ✗ {error}", fg="red")
+    if errors:
+        click.secho(f"✗ {len(errors)} error(s) found", fg="red", bold=True)
+        raise SystemExit(1)
+    click.secho("✓ locale catalogs are valid", fg="green", bold=True)
+
+
+# ---------------------------------------------------------------------------
 # fdesign version — Trunk-based prototype version snapshots
 # ---------------------------------------------------------------------------
 

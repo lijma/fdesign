@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import csv
 import datetime
+import json
 from pathlib import Path
+import re
 
 import yaml
 
@@ -34,6 +36,9 @@ status: draft
 # mobile_targets: [ios, android]            # Mobile only
 # design_direction: neutral-brand | platform-native | custom
 # design_system: neutral-brand | ios-native | material3 | <named system>
+# Optional localization context:
+# source_locale: en
+# supported_locales: [en, fr_FR]
 ---
 
 ## 产品背景
@@ -100,6 +105,8 @@ _VALID_PRD_STATUSES = frozenset({"draft", "confirmed"})
 _VALID_DESIGN_DIRECTIONS = frozenset({"neutral-brand", "platform-native", "custom"})
 _VALID_PAGE_STATUSES = frozenset({"planned", "building", "built"})
 _VALID_COMPONENT_STATUSES = frozenset({"draft", "built"})
+_LOCALE_NAME_RE = re.compile(r"^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{2,8})*$")
+_PLACEHOLDER_RE = re.compile(r"\{(\d+)\}")
 
 
 def _prototype_dir(project_dir: Path) -> Path:
@@ -220,6 +227,16 @@ def prd_validate(project_dir: Path) -> tuple[list[str], list[str]]:
         not isinstance(fm["design_system"], str) or not fm["design_system"]
     ):
         errors.append("field 'design_system' must be a non-empty string")
+    if "source_locale" in fm and (
+        not isinstance(fm["source_locale"], str) or not fm["source_locale"]
+    ):
+        errors.append("field 'source_locale' must be a non-empty string")
+    if "supported_locales" in fm:
+        locales = fm["supported_locales"]
+        if not isinstance(locales, list) or not locales or not all(
+            isinstance(locale, str) and locale for locale in locales
+        ):
+            errors.append("field 'supported_locales' must be a non-empty list of strings")
 
     # Warnings
     if fm.get("status") == "draft":
@@ -551,55 +568,199 @@ def prototype_validate(project_dir: Path) -> tuple[list[str], list[str]]:
         errors.append(
             "journey-map.csv not found — run 'fdesign prototype init' first"
         )
-        return errors, warnings
-
-    with csv_path.open(encoding="utf-8", newline="") as fh:
-        reader = csv.DictReader(fh)
-        csv_rows = list(reader)
-
-    csv_html_files: set[str] = {row.get("html_file", "") for row in csv_rows}
-    csv_domains: set[str] = {row.get("domain", "") for row in csv_rows}
-
-    # Check 1 — every build/journey/**/*.html is in the CSV
-    journey_dir = prototype_dir / "build" / "journey"
-    if journey_dir.exists():
-        for html_path in sorted(journey_dir.rglob("*.html")):
-            rel = html_path.relative_to(prototype_dir).as_posix()
-            if rel not in csv_html_files:
-                errors.append(
-                    f"journey HTML not mapped in journey-map.csv: {rel}"
-                )
-
-    # Check 2 — every CSV domain appears as a derived domain in sitemap.md
-    sitemap_path = prototype_dir / "sitemap.md"
-    if not sitemap_path.exists():
-        warnings.append(
-            "sitemap.md not found — skipping domain existence check"
-        )
     else:
-        text = sitemap_path.read_text(encoding="utf-8")
-        try:
-            fm = _parse_frontmatter(text) or {}
-        except yaml.YAMLError:
+        with csv_path.open(encoding="utf-8", newline="") as fh:
+            reader = csv.DictReader(fh)
+            csv_rows = list(reader)
+
+        csv_html_files: set[str] = {row.get("html_file", "") for row in csv_rows}
+        csv_domains: set[str] = {row.get("domain", "") for row in csv_rows}
+
+        # Check 1 — every build/journey/**/*.html is in the CSV
+        journey_dir = prototype_dir / "build" / "journey"
+        if journey_dir.exists():
+            for html_path in sorted(journey_dir.rglob("*.html")):
+                rel = html_path.relative_to(prototype_dir).as_posix()
+                if rel not in csv_html_files:
+                    errors.append(
+                        f"journey HTML not mapped in journey-map.csv: {rel}"
+                    )
+
+        # Check 2 — every CSV domain appears as a derived domain in sitemap.md
+        sitemap_path = prototype_dir / "sitemap.md"
+        if not sitemap_path.exists():
             warnings.append(
-                "sitemap.md has YAML parse error — skipping domain existence check"
+                "sitemap.md not found — skipping domain existence check"
             )
-            fm = {}
-
-        sitemap_domains: set[str] = set()
-        for page in fm.get("pages") or []:
-            if isinstance(page, dict):
-                html_file = str(page.get("file") or "")
-                domain = str(page.get("domain") or _derive_domain(html_file))
-                sitemap_domains.add(domain)
-
-        for domain in sorted(csv_domains):
-            if domain and domain not in sitemap_domains:
-                errors.append(
-                    f"domain '{domain}' in journey-map.csv not found in sitemap.md"
+        else:
+            text = sitemap_path.read_text(encoding="utf-8")
+            try:
+                fm = _parse_frontmatter(text) or {}
+            except yaml.YAMLError:
+                warnings.append(
+                    "sitemap.md has YAML parse error — skipping domain existence check"
                 )
+                fm = {}
+
+            sitemap_domains: set[str] = set()
+            for page in fm.get("pages") or []:
+                if isinstance(page, dict):
+                    html_file = str(page.get("file") or "")
+                    domain = str(page.get("domain") or _derive_domain(html_file))
+                    sitemap_domains.add(domain)
+
+            for domain in sorted(csv_domains):
+                if domain and domain not in sitemap_domains:
+                    errors.append(
+                        f"domain '{domain}' in journey-map.csv not found in sitemap.md"
+                    )
+
+    errors.extend(locale_validate(project_dir))
 
     return errors, warnings
+
+
+def load_locale_catalogs(build_dir: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
+    """Load flat Lokalise-style catalogs from ``build/locale``.
+
+    Invalid catalogs are omitted from the returned mapping and described in the
+    error list so preview can safely show only usable language choices.
+    """
+    locale_dir = build_dir / "locale"
+    if not locale_dir.exists():
+        return {}, []
+    if not locale_dir.is_dir():
+        return {}, ["build/locale must be a directory"]
+
+    catalogs: dict[str, dict[str, str]] = {}
+    errors: list[str] = []
+    paths = sorted(locale_dir.iterdir())
+    for path in paths:
+        if path.is_dir() or path.suffix != ".json":
+            continue
+        locale = path.stem
+        if not _LOCALE_NAME_RE.fullmatch(locale):
+            errors.append(f"invalid locale filename: {path.name}")
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            errors.append(f"invalid locale JSON: {path.name}")
+            continue
+        if not isinstance(data, dict) or not all(
+            isinstance(key, str) and key and isinstance(value, str)
+            for key, value in data.items()
+        ):
+            errors.append(f"locale catalog must be a flat string map: {path.name}")
+            continue
+        catalogs[locale] = data
+
+    if not catalogs and paths:
+        errors.append("build/locale contains no valid JSON catalogs")
+    return catalogs, errors
+
+
+def locale_validate(project_dir: Path) -> list[str]:
+    """Return all catalog-format and cross-language validation errors."""
+    catalogs, errors = load_locale_catalogs(_prototype_dir(project_dir) / "build")
+    if not catalogs:
+        return errors
+
+    source_locale = _locale_source(project_dir, catalogs)
+    source_catalog = catalogs[source_locale]
+    for locale, catalog in catalogs.items():
+        if locale == source_locale:
+            continue
+        missing = sorted(set(source_catalog) - set(catalog))
+        extra = sorted(set(catalog) - set(source_catalog))
+        if missing:
+            errors.append(f"locale '{locale}' missing keys: {', '.join(missing)}")
+        if extra:
+            errors.append(f"locale '{locale}' has extra keys: {', '.join(extra)}")
+        for key in sorted(set(source_catalog) & set(catalog)):
+            if _placeholders(source_catalog[key]) != _placeholders(catalog[key]):
+                errors.append(
+                    f"locale '{locale}' placeholder mismatch for key '{key}'"
+                )
+    return errors
+
+
+def locale_init(project_dir: Path, source_locale: str) -> Path:
+    """Initialize an empty source catalog for a project."""
+    _require_locale_name(source_locale)
+    locale_dir = _prototype_dir(project_dir) / "build" / "locale"
+    if locale_dir.exists():
+        raise FileExistsError("locale catalogs already exist")
+    locale_dir.mkdir(parents=True)
+    path = locale_dir / f"{source_locale}.json"
+    _write_locale_catalog(path, {})
+    return path
+
+
+def locale_add(project_dir: Path, locale: str) -> Path:
+    """Scaffold a translation catalog by copying the source key inventory."""
+    _require_locale_name(locale)
+    catalogs, errors = load_locale_catalogs(_prototype_dir(project_dir) / "build")
+    if errors:
+        raise ValueError("; ".join(errors))
+    if not catalogs:
+        raise FileNotFoundError("locale catalogs not found — run 'fdesign locale init' first")
+    if locale in catalogs:
+        raise FileExistsError(f"locale '{locale}' already exists")
+    path = _prototype_dir(project_dir) / "build" / "locale" / f"{locale}.json"
+    _write_locale_catalog(path, catalogs[_locale_source(project_dir, catalogs)])
+    return path
+
+
+def locale_remove(project_dir: Path, locale: str) -> Path:
+    """Remove a non-source locale catalog and return its former path."""
+    _require_locale_name(locale)
+    catalogs, errors = load_locale_catalogs(_prototype_dir(project_dir) / "build")
+    if errors:
+        raise ValueError("; ".join(errors))
+    if locale not in catalogs:
+        raise FileNotFoundError(f"locale '{locale}' not found")
+    if locale == _locale_source(project_dir, catalogs):
+        raise ValueError(f"cannot remove source locale '{locale}'")
+    path = _prototype_dir(project_dir) / "build" / "locale" / f"{locale}.json"
+    path.unlink()
+    return path
+
+
+def locale_list(project_dir: Path) -> tuple[list[str], list[str]]:
+    """Return available locale identifiers and malformed-catalog errors."""
+    catalogs, errors = load_locale_catalogs(_prototype_dir(project_dir) / "build")
+    return sorted(catalogs), errors
+
+
+def _locale_source(project_dir: Path, catalogs: dict[str, dict[str, str]]) -> str:
+    """Resolve the source from PRD context, then use stable legacy fallbacks."""
+    prd_path = _prototype_dir(project_dir) / "prd.md"
+    if prd_path.exists():
+        try:
+            source = (_parse_frontmatter(prd_path.read_text(encoding="utf-8")) or {}).get(
+                "source_locale"
+            )
+        except yaml.YAMLError:
+            source = None
+        if isinstance(source, str) and source in catalogs:
+            return source
+    return "en" if "en" in catalogs else sorted(catalogs)[0]
+
+
+def _require_locale_name(locale: str) -> None:
+    if not _LOCALE_NAME_RE.fullmatch(locale):
+        raise ValueError(f"invalid locale identifier: {locale}")
+
+
+def _write_locale_catalog(path: Path, catalog: dict[str, str]) -> None:
+    path.write_text(
+        json.dumps(catalog, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+
+
+def _placeholders(value: str) -> set[str]:
+    return set(_PLACEHOLDER_RE.findall(value))
 
 
 # ---------------------------------------------------------------------------
