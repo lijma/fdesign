@@ -38,3 +38,4 @@ MANIFEST
 
 # macOS
 .DS_Store
+.Codex

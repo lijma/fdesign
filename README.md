@@ -125,16 +125,32 @@ AI-generated code is notoriously hard to hand off because it relies on hallucina
 
 On the first design interaction without an fdesign project, the installed Agent asks for the target platform before generating artifacts:
 
-- **Web** — whether responsive behavior is required and which widths to review.
-- **Mobile** — iOS, Android, both, or another device target; then a design direction: `neutral-brand`, `platform-native`, or a named custom system.
+- **Web** — whether responsive behavior is required and which widths to review. fdesign produces responsive journey HTML and lets you inspect it in phone, tablet, and desktop preview frames.
+- **Mobile** — iOS, Android, both, or another device target; then a design direction: `neutral-brand`, `platform-native`, or a named custom system. The Agent models navigation stacks, back/dismiss behavior, overlays, touch-first controls, safe areas, and phone-oriented screen layouts.
 
 `platform-native` resolves a single iOS target to Apple-native/SwiftUI conventions and a single Android target to Google Material 3. For a shared iOS-and-Android prototype, `neutral-brand` derives a consistent UI from the product's design tokens; native output uses separate variants rather than mixing both platforms in one screen. Mobile pages remain ordinary responsive HTML, while fdesign preview supplies the phone/tablet/desktop device frame.
 
 The platform design guidance follows [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) and [Material 3](https://developer.android.com/develop/ui/compose/designsystems/material3).
 
-### Prototype localization
+### Web support
 
-Before a localized prototype is created, fdesign asks for a source language and the supported language set. Initialize and manage catalogs through the CLI rather than by manually creating files:
+Web projects can opt into responsive design during discovery. The Agent records that decision in the PRD, designs for the agreed breakpoints, and reviews the same journey in fdesign's phone, tablet, and desktop frames. The generated page remains normal HTML/CSS, so it can be handed off without an artificial device shell embedded in the page.
+
+### Mobile support
+
+Mobile projects can target iOS, Android, or both:
+
+- **iOS native** — Apple HIG and SwiftUI-aligned navigation, tabs, sheets, and action patterns.
+- **Android native** — Material 3 components, navigation, dialogs, and bottom sheets.
+- **Neutral brand** — a shared token-driven language for cross-platform products, without blending recognizably iOS and Android patterns on one screen.
+
+The preview shell provides device framing; generated journey pages stay focused on real app UI and work as responsive HTML.
+
+### Prototype localization (i18n)
+
+For a new project, fdesign confirms platform and core product requirements, then asks whether localization is needed before project and PRD creation. When enabled, it records a source language and supported language set. Preview supplies the default language selector; fdesign does not add a product-level language setting unless you explicitly request one.
+
+Initialize and manage catalogs through the CLI rather than by manually creating files:
 
 ```bash
 fdesign locale init --source en
