@@ -187,6 +187,7 @@ To keep the AI in check, fdesign enforces a structured workflow combining manual
 | Cursor | `fdesign enable cursor` |
 | Claude Code | `fdesign enable claude` |
 | Trae IDE | `fdesign enable trae` |
+| Codex | `fdesign enable codex` |
 | Qwen Code | `fdesign enable qwen-code` |
 | OpenCode | `fdesign enable opencode` |
 | OpenClaw | `fdesign enable openclaw` |

@@ -4,6 +4,7 @@ from fdesign.adapters import (
     ADAPTERS,
     SUPPORTED_AGENTS,
     ClaudeAdapter,
+    CodexAdapter,
     CopilotAdapter,
     CursorAdapter,
     OpenClawAdapter,
@@ -99,3 +100,28 @@ def test_agents_md_adapters(tmp_path):
     content = agents.read_text(encoding="utf-8")
     assert "STALE_SECTION" not in content
     assert ".opencode/skills/fdesign/SKILL.md" in content
+
+
+def test_codex_adapter_installs_and_refreshes_only_fdesign_content(tmp_path):
+    other_skill = tmp_path / ".codex" / "skills" / "other" / "SKILL.md"
+    other_skill.parent.mkdir(parents=True)
+    other_skill.write_text("# Other skill\n", encoding="utf-8")
+    (tmp_path / "AGENTS.md").write_text(
+        "# User instructions\n<!-- fdesign:skills -->\nSTALE_SECTION",
+        encoding="utf-8",
+    )
+
+    created = CodexAdapter().install(tmp_path)
+
+    skill_path = tmp_path / ".codex" / "skills" / "fdesign" / "SKILL.md"
+    assert created == [skill_path, tmp_path / "AGENTS.md"]
+    skill = skill_path.read_text(encoding="utf-8")
+    assert "name: fdesign" in skill
+    assert "# fdesign — Prototype Skill" in skill
+    assert other_skill.read_text(encoding="utf-8") == "# Other skill\n"
+
+    agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "# User instructions" in agents
+    assert "STALE_SECTION" not in agents
+    assert ".codex/skills/fdesign/SKILL.md" in agents
+    assert "# fdesign — Prototype Skill" not in agents

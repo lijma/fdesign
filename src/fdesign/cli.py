@@ -41,6 +41,7 @@ def main():
       fdesign enable cursor     Install skills (Cursor)
       fdesign enable claude     Install skills (Claude Code)
       fdesign enable trae       Install skills (Trae IDE)
+      fdesign enable codex      Install skills (Codex)
       fdesign enable qwen-code  Install skills (Qwen Code)
       fdesign enable opencode   Install skills (OpenCode)
       fdesign enable openclaw   Install skills (OpenClaw)
@@ -92,6 +93,7 @@ def enable(agent: str, project_dir: Path):
       cursor     Cursor — .cursor/rules/
       claude     Claude Code — .claude/skills/ + CLAUDE.md
       trae       Trae IDE — .trae/project_rules.md
+      codex      Codex — .codex/skills/ + AGENTS.md
       qwen-code  Qwen Code (CLI) — AGENTS.md
       opencode   OpenCode (CLI) — .opencode/skills/ + AGENTS.md
       openclaw   OpenClaw — .openclaw/skills/ + AGENTS.md

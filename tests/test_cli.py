@@ -145,6 +145,20 @@ class TestEnableCommand:
         assert skills_dir.is_dir()
         assert (tmp_path / "CLAUDE.md").exists()
 
+    def test_enable_codex(self, runner, tmp_path):
+        result = runner.invoke(
+            main, ["enable", "codex", "--project-dir", str(tmp_path)]
+        )
+        assert result.exit_code == 0
+        assert ".codex/skills/fdesign/SKILL.md" in result.output
+        assert (tmp_path / ".codex" / "skills" / "fdesign" / "SKILL.md").exists()
+        assert (tmp_path / "AGENTS.md").exists()
+
+    def test_enable_help_lists_codex(self, runner):
+        result = runner.invoke(main, ["enable", "--help"])
+        assert result.exit_code == 0
+        assert "codex" in result.output
+
     def test_enable_invalid_agent(self, runner, tmp_path):
         result = runner.invoke(
             main, ["enable", "invalid", "--project-dir", str(tmp_path)]

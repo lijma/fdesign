@@ -214,7 +214,7 @@ class TraeAdapter:
 
 
 # ---------------------------------------------------------------------------
-# AGENTS.md-based adapters (Qwen Code, OpenCode, OpenClaw)
+# AGENTS.md-based adapters (Codex, Qwen Code, OpenCode, OpenClaw)
 # All write to AGENTS.md using <!-- fdesign:skills --> markers.
 # OpenCode and OpenClaw also write per-skill files under .<agent>/skills/.
 # ---------------------------------------------------------------------------
@@ -290,6 +290,12 @@ class QwenCodeAdapter(_AgentsMdAdapter):
     _skills_subdir = None
 
 
+class CodexAdapter(_AgentsMdAdapter):
+    """Codex — AGENTS.md + .codex/skills/."""
+    name = "codex"
+    _skills_subdir = "codex"
+
+
 class OpenCodeAdapter(_AgentsMdAdapter):
     """OpenCode (terminal CLI) — AGENTS.md + .opencode/skills/."""
     name = "opencode"
@@ -311,6 +317,7 @@ ADAPTERS: dict[str, type[AgentAdapter]] = {
     "cursor": CursorAdapter,
     "claude": ClaudeAdapter,
     "trae": TraeAdapter,
+    "codex": CodexAdapter,
     "qwen-code": QwenCodeAdapter,
     "opencode": OpenCodeAdapter,
     "openclaw": OpenClawAdapter,
